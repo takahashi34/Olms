@@ -341,7 +341,7 @@ class VPulse_LIV():
                 except ValueError:
                     print(f"Thermopile read error: {raw}")
                     return 0.0
-            else
+            else:
                 print("WARNING: The selected thermopile is not compatible with this system.")
                 return 0.0
         else:
