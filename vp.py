@@ -337,7 +337,7 @@ class VPulse_LIV():
             elif "coherent" in id.lower():
                 try:
                     raw = self.thermopile.query('READ?')
-                    return float(raw)
+                    return float(raw.split(',')[0])
                 except ValueError:
                     print(f"Thermopile read error: {raw}")
                     return 0.0
