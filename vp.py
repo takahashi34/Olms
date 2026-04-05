@@ -342,7 +342,7 @@ class VPulse_LIV():
                     print(f"Thermopile read error: {raw}")
                     return 0.0
             else:
-                print("WARNING: The selected thermopile is not compatible with this system.")
+                print(f"WARNING: Thermopile {id} is not compatible with this system.")
                 return 0.0
         else:
             return self.scope.query_ascii_values(
