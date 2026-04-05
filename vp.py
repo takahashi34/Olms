@@ -43,13 +43,13 @@ class VPulse_LIV():
             self.thermopile = rm.open_resource(self.thermopile_address.get())
             id = self.thermopile.query("*IDN?")
             wavelength = int(self.wavelength_entry.get())
-            if "integra" in id.upper():
+            if "integra" in id.lower():
                 self.thermopile.write("*CSU")
                 self.thermopile.timeout = 5000
                 self.thermopile.write_termination = ''
                 self.thermopile.write(f"*PWC{wavelength:05d}")
                 print("Thermopile wavelength set to %d nm" % wavelength)
-            elif "coherent" in id.upper():
+            elif "coherent" in id.lower():
                 self.thermopile.write("*RST")
                 self.thermopile.write(f"CONFigure:WAVElength {wavelength:05d}")
                 print("Thermopile wavelength set to %d nm" % wavelength)
@@ -327,14 +327,14 @@ class VPulse_LIV():
 
     def _read_light(self, id):
         if self.lightMode_var.get() == 'thermo':
-            if "integra" in id.upper():
+            if "integra" in id.lower():
                 try:
                     raw = self.thermopile.query('*CVU')
                     return float(raw)
                 except ValueError:
                     print(f"Thermopile read error: {raw}")
                     return 0.0
-            elif "coherent" in id.upper():
+            elif "coherent" in id.lower():
                 try:
                     raw = self.thermopile.query('READ?')
                     return float(raw)
