@@ -156,7 +156,7 @@ class VPulse_LIV():
                 self.pulser.write("OUTPut ON")
 
                 # Read light amplitude from oscilloscope
-                light_ampl_osc = light_ampl_osc = self._read_light(id)
+                light_ampl_osc = self._read_light(id)
                 # Update trigger cursor if it being applied to the current waveform
                 if (self.trigger_channel.get() == self.light_channel.get()):
                     updateTriggerCursor(light_ampl_osc, self.scope, totalDisplayLight)
@@ -336,11 +336,14 @@ class VPulse_LIV():
                     return 0.0
             elif "coherent" in id.upper():
                 try:
-                    raw = self.thermopile.write("READ?")
+                    raw = self.thermopile.query('READ?')
                     return float(raw)
                 except ValueError:
                     print(f"Thermopile read error: {raw}")
                     return 0.0
+            else
+                print("WARNING: The selected thermopile is not compatible with this system.")
+                return 0.0
         else:
             return self.scope.query_ascii_values(
                 "SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.light_channel.get()
