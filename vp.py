@@ -43,13 +43,14 @@ class VPulse_LIV():
             self.thermopile = rm.open_resource(self.thermopile_address.get())
             id = self.thermopile.query("*IDN?")
             wavelength = int(self.wavelength_entry.get())
-            if "integra" in id.upper():
+            if "integra" in id.lower():
                 self.thermopile.write("*CSU")
                 self.thermopile.timeout = 5000
                 self.thermopile.write_termination = ''
                 self.thermopile.write(f"*PWC{wavelength:05d}")
                 print("Thermopile wavelength set to %d nm" % wavelength)
-            elif "coherent" in id.upper():
+            elif "coherent" in id.lower():
+                self.thermopile.write("*RST")
                 self.thermopile.write(f"CONFigure:WAVElength {wavelength:05d}")
                 print("Thermopile wavelength set to %d nm" % wavelength)
                 self.thermopile.write("CONFigure:ZERO")
@@ -62,7 +63,8 @@ class VPulse_LIV():
         pulseWidth = float(self.pulse_width_entry.get())
 
         # Mulitplication by 10 is due to a peculiarty of this oscilloscope
-        self.scope.write(":TIMebase:RANGe %.6fus" %(0.5*pulseWidth*10))
+        # This is 10 microseconds (horizontal scaling).
+        self.scope.write(":TIMebase:RANGe %.6fus" %(10*pulseWidth*10)) 
 
         self.scope.write(":TRIGger:MODE GLITch")
         self.scope.write(":TRIGger:GLITch:SOURce CHANnel%d" %self.trigger_channel.get())
@@ -155,7 +157,7 @@ class VPulse_LIV():
                 self.pulser.write("OUTPut ON")
 
                 # Read light amplitude from oscilloscope
-                light_ampl_osc = light_ampl_osc = self._read_light()
+                light_ampl_osc = self._read_light(id)
                 # Update trigger cursor if it being applied to the current waveform
                 if (self.trigger_channel.get() == self.light_channel.get()):
                     updateTriggerCursor(light_ampl_osc, self.scope, totalDisplayLight)
@@ -181,7 +183,7 @@ class VPulse_LIV():
                     voltage_ampl_osc, totalDisplayVoltage, vertScaleVoltage)
 
                 # Get updated readings
-                light_ampl_osc = self._read_light()
+                light_ampl_osc = self._read_light(id)
                 current_ampl_osc = self.scope.query_ascii_values("SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.current_channel.get())[0]
                 voltage_ampl_osc = self.scope.query_ascii_values("SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.voltage_channel.get())[0]
                 
@@ -324,13 +326,24 @@ class VPulse_LIV():
         self.start_button.config(command=self.start_liv_pulse)
         self.compute_power_checkbox.config(state=NORMAL)
 
-    def _read_light(self):
+    def _read_light(self, id):
         if self.lightMode_var.get() == 'thermo':
-            try:
-                raw = self.thermopile.query('*CVU')
-                return float(raw)
-            except ValueError:
-                print(f"Thermopile read error: {raw}")
+            if "integra" in id.lower():
+                try:
+                    raw = self.thermopile.query('*CVU')
+                    return float(raw)
+                except ValueError:
+                    print(f"Thermopile read error: {raw}")
+                    return 0.0
+            elif "coherent" in id.lower():
+                try:
+                    raw = self.thermopile.query('READ?')
+                    return float(raw.split(',')[0])
+                except ValueError:
+                    print(f"Thermopile read error: {raw}")
+                    return 0.0
+            else:
+                print(f"WARNING: Thermopile {id} is not compatible with this system.")
                 return 0.0
         else:
             return self.scope.query_ascii_values(
