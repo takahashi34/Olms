@@ -79,10 +79,10 @@ class VPulse_LIV():
         # Note previous trigger level before updating the trigger cursor
         trigger_prev = 1e-3
 
-        # Channel scales - set each channel to 0.1mV/div to start
-        vertScaleLight = 0.0001
-        vertScaleCurrent = 0.0001
-        vertScaleVoltage = 0.0001
+        # Channel scales - set each channel to 1mV/div to start
+        vertScaleLight = 0.001
+        vertScaleCurrent = 0.001
+        vertScaleVoltage = 0.001
 
         # Initial scale for light channel
         self.scope.write(":CHANNEL%d:SCALe %.3f" %(self.light_channel.get(), vertScaleLight))
