@@ -63,7 +63,8 @@ class VPulse_LIV():
         pulseWidth = float(self.pulse_width_entry.get())
 
         # Mulitplication by 10 is due to a peculiarty of this oscilloscope
-        self.scope.write(":TIMebase:RANGe %.6fus" %(0.5*pulseWidth*10))
+        # This is 10 microseconds (horizontal scaling).
+        self.scope.write(":TIMebase:RANGe %.6fus" %(10*pulseWidth*10)) 
 
         self.scope.write(":TRIGger:MODE GLITch")
         self.scope.write(":TRIGger:GLITch:SOURce CHANnel%d" %self.trigger_channel.get())
