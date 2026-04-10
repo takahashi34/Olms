@@ -316,7 +316,6 @@ class CW_LIV():
 
         # Assign window title and geometry
         self.master.title('CW Measurement: L-I-V')
-        
         self.master.columnconfigure(0, weight=1)
         self.master.columnconfigure(1, weight=1)
         self.master.rowconfigure(0, weight=1)
@@ -326,7 +325,9 @@ class CW_LIV():
         """ Sweep settings frame """
         self.setFrame = LabelFrame(self.master, text='Sweep settings')
         # Display settings frame
-        self.setFrame.grid(column=0, row=0, sticky='W', padx=(10, 5), pady=(0,5), rowspan=2)
+        self.setFrame.grid(column=0, row=0, sticky='NSEW', padx=(10, 5), pady=(0,5), rowspan=2)
+        for c in range(4): self.setFrame.columnconfigure(c, weight=1)
+        for r in range(11): self.setFrame.rowconfigure(r, weight=1)
 
         # Create plot directory label, button, and entry box
         # Plot File Label
@@ -421,7 +422,9 @@ class CW_LIV():
         """ Device settings frame """
         self.devFrame1 = LabelFrame(self.master, text='Device settings')
         # Display device settings frame
-        self.devFrame1.grid(column=1, row=0, sticky='N', padx=(0, 0), pady=(0,0))
+        self.devFrame1.grid(column=1, row=0, sticky='NSEW', padx=(0, 0), pady=(0,0))
+        for c in range(2): self.devFrame1.columnconfigure(c, weight=1)
+        for r in range(7): self.devFrame1.rowconfigure(r, weight=1)
         
         # Create label for device name entry box
         self.device_name_label = Label(self.devFrame1, text='Device name:')
@@ -458,7 +461,9 @@ class CW_LIV():
         """ Instrument settings frame """
         self.instrFrame = LabelFrame(self.master, text='Instrument settings')
         # Display device settings frame
-        self.instrFrame.grid(column=1, row=1, sticky='N')
+        self.instrFrame.grid(column=1, row=1, sticky='NSEW')
+        for c in range(4): self.instrFrame.columnconfigure(c, weight=1)
+        for r in range(8): self.instrFrame.rowconfigure(r, weight=1)
         # Device addresses
         connected_addresses = list(rm.list_resources())
         # Pulser and scope variables
