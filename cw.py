@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import Label, Entry, Button, LabelFrame, OptionMenu, Radiobutton, StringVar, IntVar, DISABLED, NORMAL, font
 
-from instruments import init_keithley
+from instruments import init_keithley, init_thermopile, read_light
 import pyvisa
 
 # Import Browse button functions
@@ -108,281 +108,128 @@ class CW_LIV():
         Button(self.tecFrame, text='Send Temp.', command=self.set_tec_temp).grid(row=3, column=0)
         Button(self.tecFrame, text='Toggle Output', command=self.toggle_tec).grid(row=3, column=1)    
 
-    def start_liv_sweep_osc(self):
-        # # Enable stop button
-        # self.stop_button.config(state=NORMAL)
+    def start_liv_sweep(self):
+        compliance = float(self.compliance_entry.get()) / 1000
 
         # Initialize SMU
-        compliance = float(self.compliance_entry.get()) / 1000
         self.keithley = init_keithley(
-        rm,
-        self.keithley_address.get(),
-        source_mode='volt',
-        compliance=compliance
+            rm,
+            self.keithley_address.get(),
+            source_mode='volt',
+            compliance=compliance
         )
 
-        # Connect to oscilloscope
-        self.scope = rm.open_resource(self.osc_address.get())
-        # Initialize oscilloscope
-        self.scope.write("*RST")
-        self.scope.write("*CLS")
+        mode = self.lightMode_var.get()
 
-        self.scope.write(":CHANnel%d:IMPedance %s" %(self.light_channel.get(), channelImpedance(self.light_channel_impedance.get())))
-        self.scope.write(":TIMebase:RANGe 2E-6")
+        thermo_id = None
 
-        # Channel scales - set each channel to 1mV/div to start
-        vertScaleLight = 0.001
+        if mode == 'osc':
+            # Connect to and initialize oscilloscope
+            self.scope = rm.open_resource(self.osc_address.get())
+            self.scope.write("*RST")
+            self.scope.write("*CLS")
+            self.scope.write(":CHANnel%d:IMPedance %s" % (self.light_channel.get(), channelImpedance(self.light_channel_impedance.get())))
+            self.scope.write(":TIMebase:RANGe 2E-6")
 
-        self.scope.write(":CHANNEL%d:SCALe %.3f" %
-                         (self.light_channel.get(), vertScaleLight))
-        self.scope.write(":CHANnel%d:DISPlay ON" % self.light_channel.get())
+            vertScaleLight = 0.001
+            self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), vertScaleLight))
+            self.scope.write(":CHANnel%d:DISPlay ON" % self.light_channel.get())
+            self.scope.write(":CHANnel%d:OFFset %.3fV" % (self.light_channel.get(), 2 * vertScaleLight))
+            totalDisplayCurrent = 6 * vertScaleLight
 
-        # Move signal down two divisions for a better view on the screen
-        self.scope.write(":CHANnel%d:OFFset %.3fV" %
-                         (self.light_channel.get(), 2*vertScaleLight))
+        elif mode == 'thermo':
+            self.thermopile, thermo_id = init_thermopile(
+                rm,
+                self.osc_address.get(),
+                self.wavelength_entry.get()
+            )
 
-        # Total mV based on 6 divisions to top of display
-        totalDisplayCurrent = 6*vertScaleLight
-
-        if 'Lin' == self.radiobutton_var.get():
-            # Set up Linear voltage array
-            stepSize = round(float(self.step_size_entry.get())/1000, 3)
+        # Build voltage array
+        if self.radiobutton_var.get() == 'Lin':
+            stepSize = round(float(self.step_size_entry.get()) / 1000, 3)
             startV = float(self.start_voltage_entry.get())
             stopV = float(self.stop_voltage_entry.get())
-
             self.voltage_array = arange(startV, stopV, stepSize)
             self.voltage_array = append(self.voltage_array, stopV)
-
-            numPtsLin = int((stopV - startV)/stepSize)+1
-        elif 'Log' == self.radiobutton_var.get():
-            voltage_source_pos = logspace(-4, log10(
-                float(self.stop_voltage_entry.get())), int(self.num_of_pts_entry.get())/2)
-            voltage_source_neg = - \
-                logspace(log10(abs(float(self.start_voltage_entry.get()))
-                               ), -4, int(self.num_of_pts_entry.get())/2)
+        elif self.radiobutton_var.get() == 'Log':
+            voltage_source_pos = logspace(-4, log10(float(self.stop_voltage_entry.get())), int(self.num_of_pts_entry.get()) / 2)
+            voltage_source_neg = -logspace(log10(abs(float(self.start_voltage_entry.get()))), -4, int(self.num_of_pts_entry.get()) / 2)
             self.voltage_array = append(voltage_source_neg, voltage_source_pos)
 
-        # read
-        # Create empty space vector
         self.current = zeros(len(self.voltage_array), float)
         self.light = zeros(len(self.voltage_array), float)
-        
-        # Reset live plot for new measurement
         self.live_plot.reset()
-        
-        # Loop number of points
-        for i in range(0, len(self.voltage_array)):
-            a = self.set_voltage(round(self.voltage_array[i], 3))
-            # Delay time between sweeping
-            sleep(0.1)
-            # --------source-------
-            # Read light amplitude from oscilloscope; multiply by 2 to use 50-ohms channel
-            self.current[i] = eval(self.keithley.query("read?"))
-            light_ampl_osc = self.scope.query_ascii_values(
-                    "SINGLE;*OPC;:MEASure:VMAX? CHANNEL%d" % self.light_channel.get())[0]
 
-            # Adjust vertical scales if measured amplitude reaches top of screen (90% of display)
-            while (light_ampl_osc > 0.9*totalDisplayCurrent):
-                vertScaleLight = incrOscVertScale(vertScaleLight)
-                totalDisplayCurrent = 6*vertScaleLight
-                self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
-                light_ampl_osc = self.scope.query_ascii_values("SINGLE;*OPC;:MEASure:VMAX? CHANNEL%d" % self.light_channel.get())[0]
-            
-            # Store light reading in self.light
+        for i in range(len(self.voltage_array)):
+            self.set_voltage(round(self.voltage_array[i], 3))
+            sleep(0.1)
+            self.current[i] = eval(self.keithley.query("read?"))
+
+            light_ampl_osc = read_light(
+                getattr(self, 'scope', None),
+                getattr(self, 'thermopile', None),
+                thermo_id,
+                mode,
+                self.light_channel.get()
+            )
+            # Auto-scale vertical if in oscilloscope mode and signal nears top of display
+            if mode == 'osc':
+                while light_ampl_osc > 0.9 * totalDisplayCurrent:
+                    vertScaleLight = incrOscVertScale(vertScaleLight)
+                    totalDisplayCurrent = 6 * vertScaleLight
+                    self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
+                    light_ampl_osc = read_light(
+                        self.scope, None, None, mode, self.light_channel.get()
+                    )
+
             self.light[i] = light_ampl_osc
-            
-            # Update live plot (convert to mA and mV for display)
             self.live_plot.add_point(self.current[i] * 1000, self.voltage_array[i] * 1000, self.light[i] * 1000)
 
-        # finish reading
         # Turn off output
         self.keithley.write("outp off")
 
-        # open file and write in data
+        # Thermopile cleanup
+        if mode == 'thermo':
+            self.thermopile.write('*COU')
+
+        # Save data to file
         txtDir = self.txt_dir_entry.get()
-        filename = self.device_name_entry.get() + '_CW-LIV_' + self.device_temp_entry.get() + \
-            'C_' + self.device_dim_entry.get() + '_' + self.test_laser_button_var.get()
+        filename = (self.device_name_entry.get() + '_CW-LIV_' + self.device_temp_entry.get() +
+                    'C_' + self.device_dim_entry.get() + '_' + self.test_laser_button_var.get())
         filepath = os.path.join(txtDir + '/' + filename + '.txt')
-        fd = open(filepath, 'w+')
-        i = 1
-        
-        fd.writelines('Device voltage (V)\tDevice current (A)\tPhotodetector current (W)\n')
-        for i in range(0, len(self.voltage_array)):
-            # --------IV file----------
-            fd.write(str(round(self.voltage_array[i], 5)) + '\t')
-            fd.write(str(self.current[i]) + '\t')
-            fd.write(str(self.light[i]))
-            fd.writelines('\n')
+        with open(filepath, 'w+') as fd:
+            fd.writelines('Device voltage (V)\tDevice current (A)\tPhotodetector current (W)\n')
+            for i in range(len(self.voltage_array)):
+                fd.write(str(round(self.voltage_array[i], 5)) + '\t')
+                fd.write(str(self.current[i]) + '\t')
+                fd.write(str(self.light[i]) + '\n')
 
-        fd.close()
-
-        # ------------------ Plot measured characteristic ----------------------------------
-
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('Measured device light output (W)', color='red')
-        ax1.set_xlabel('Measured device current (A)')
-        ax1.set_ylabel('Measured device voltage (V)', color='blue')
-        ax1.plot(self.current, self.voltage_array, color='blue', label='I-V Characteristic')
-        ax2.plot(self.current, self.light, color='red', label='L-I Characteristic')
-        
-        plotString = 'Device Name: ' + self.device_name_entry.get() + '\nTest Type: CW\n' + 'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() + \
-            '\n' + 'Device Dimensions: ' + self.device_dim_entry.get() + ' (' + u'\u03BC' + 'm x ' + u'\u03BC' + 'm)\n' + \
-            'Test Structure or Laser: ' + self.test_laser_button_var.get()
-
-        plt.figtext(0.02, 0.02, plotString, fontsize=12)
-
-        plt.subplots_adjust(bottom=0.3)
-
-        plt.savefig(self.plot_dir_entry.get() + '/' + filename + ".png")
-        plt.show()
-
-        try:
-            if not os.path.exists(self.plot_dir_entry.get()):
-                os.makedirs(self.plot_dir_entry.get())
-        except:
-            print('Error: Creating directory: ' + self.plot_dir_entry.get())
-
-    """
-    Function referenced when: "Start" button is pushed and thermopile mode is selected.
-    Description: Runs an IV sweep using the various input parameters in the main application window
-    such as: start voltage, stop voltage, step size, etc.
-    """
-
-    def start_liv_sweep_thermo(self):
-        # Connect to Keithley Source Meter
-        self.keithley = rm.open_resource(self.keithley_address.get())
-
-        # # Enable stop button
-        # self.stop_button.config(state=NORMAL)
-
-        # Reset GPIB defaults
-        self.keithley.write("*rst; status:preset; *cls")
-        # Select source function mode as voltage source
-        self.keithley.write("sour:func volt")
-        # Set source level to 10V
-        self.keithley.write("sour:volt 0")
-        # Set sensor to current
-        self.keithley.write("sens:func 'curr'")
-        # Set curr compliance
-        compliance = float(self.compliance_entry.get())/1000
-        self.keithley.write("sens:curr:prot:lev " + str(compliance))
-        # Set curr measure range to auto
-        self.keithley.write("sens:curr:range:auto on ")
-
-        ## Connect to thermopile
-        self.thermopile = rm.open_resource(self.osc_address.get())
-        ## Initialize thermopile
-        self.thermopile.timeout = 5000
-        self.thermopile.write_termination = ''
-        self.thermopile.write('*COU')
-        wavelength = int(self.wavelength_entry.get())
-        command = f"*PWC{wavelength:05d}"
-        thermopile.write(command)
-        print("Set wavelength to: %s nm" % wavelength)
-        
-
-        if 'Lin' == self.radiobutton_var.get():
-            # Set up Linear voltage array
-            stepSize = round(float(self.step_size_entry.get())/1000, 3)
-            startV = float(self.start_voltage_entry.get())
-            stopV = float(self.stop_voltage_entry.get())
-
-            self.voltage_array = arange(startV, stopV, stepSize)
-            self.voltage_array = append(self.voltage_array, stopV)
-
-            numPtsLin = int((stopV - startV)/stepSize)+1
-        elif 'Log' == self.radiobutton_var.get():
-            voltage_source_pos = logspace(-4, log10(
-                float(self.stop_voltage_entry.get())), int(self.num_of_pts_entry.get())/2)
-            voltage_source_neg = - \
-                logspace(log10(abs(float(self.start_voltage_entry.get()))
-                               ), -4, int(self.num_of_pts_entry.get())/2)
-            self.voltage_array = append(voltage_source_neg, voltage_source_pos)
-
-        # read
-
-        # Reset live plot for new measurement
-        self.live_plot.reset()
-
-        # Create empty space vector
-        self.current = zeros(len(self.voltage_array), float)
-        self.light = zeros(len(self.voltage_array), float)
-        # Loop number of points
-        for i in range(0, len(self.voltage_array)):
-            a = self.set_voltage(round(self.voltage_array[i], 3))
-            # Delay time between sweeping
-            sleep(0.1)
-            # --------source-------
-            # Read light amplitude from oscilloscope; multiply by 2 to use 50-ohms channel
-            self.current[i] = eval(self.keithley.query("read?"))
- 
-            try:
-                raw_value = self.thermopile.query('*CVU')
-                light_ampl_osc = float(raw_value)
-                print("L: %s V" % raw_value)
-            except ValueError:
-                light_ampl_osc = 0
-                print("Thermopile read error: %s" % raw_value)
-
-                
-            # Store light reading in self.light
-            self.light[i] = light_ampl_osc
-
-            # Update live plot (convert to mA and mV for display)
-            self.live_plot.add_point(self.current[i] * 1000, self.voltage_array[i] * 1000, self.light[i] * 1000)
-
-        # finish reading
-        # Turn off output
-        self.keithley.write("outp off")
-        # Clear thermopile zero offset
-        self.thermopile.write('*COU')
-
-        # open file and write in data
-        txtDir = self.txt_dir_entry.get()
-        filename = self.device_name_entry.get() + '_CW-LIV_' + self.device_temp_entry.get() + \
-            'C_' + self.device_dim_entry.get() + '_' + self.test_laser_button_var.get()
-        filepath = os.path.join(txtDir + '/' + filename + '.txt')
-        fd = open(filepath, 'w+')
-        i = 1
-        
-        fd.writelines('Device voltage (V)\tDevice current (A)\tPhotodetector current (W)\n')
-        for i in range(0, len(self.voltage_array)):
-            # --------LIV file----------
-            fd.write(str(round(self.voltage_array[i], 5)) + '\t')
-            fd.write(str(self.current[i]) + '\t')
-            fd.write(str(self.light[i]))
-            fd.writelines('\n')
-
-        fd.close()
-
-        # ------------------ Plot measured characteristic ----------------------------------
-
+        # Plot
         fig, ax1 = plt.subplots()
         ax2 = ax1.twinx()
         ax2.set_ylabel('Measured device light output (W)', color='red')
         ax1.set_xlabel('Measured device current (mA)')
         ax1.set_ylabel('Measured device voltage (V)', color='blue')
-        ax1.plot(self.current*1000, self.voltage_array, color='blue', label='I-V Characteristic')
-        ax2.plot(self.current*1000, self.light, color='red', label='L-I Characteristic')
-        
-        plotString = 'Device Name: ' + self.device_name_entry.get() + '\nTest Type: CW\n' + 'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() + \
-            '\n' + 'Device Dimensions: ' + self.device_dim_entry.get() + ' (' + u'\u03BC' + 'm x ' + u'\u03BC' + 'm)\n' + \
-            'Test Structure or Laser: ' + self.test_laser_button_var.get()
+        ax1.plot(self.current * 1000, self.voltage_array, color='blue', label='I-V Characteristic')
+        ax2.plot(self.current * 1000, self.light, color='red', label='L-I Characteristic')
+
+        plotString = ('Device Name: ' + self.device_name_entry.get() + '\nTest Type: CW\n' +
+                      'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() +
+                      '\n' + 'Device Dimensions: ' + self.device_dim_entry.get() +
+                      ' (' + u'\u03BC' + 'm x ' + u'\u03BC' + 'm)\n' +
+                      'Test Structure or Laser: ' + self.test_laser_button_var.get())
 
         plt.figtext(0.02, 0.02, plotString, fontsize=12)
-
         plt.subplots_adjust(bottom=0.3)
+
+        if not os.path.exists(self.plot_dir_entry.get()):
+            try:
+                os.makedirs(self.plot_dir_entry.get())
+            except Exception:
+                print('Error: Creating directory: ' + self.plot_dir_entry.get())
 
         plt.savefig(self.plot_dir_entry.get() + '/' + filename + ".png")
         plt.show()
-
-        try:
-            if not os.path.exists(self.plot_dir_entry.get()):
-                os.makedirs(self.plot_dir_entry.get())
-        except:
-            print('Error: Creating directory: ' + self.plot_dir_entry.get())
-
 
     """
     Function referenced when: setting voltage within the start_iv_sweep function
@@ -440,7 +287,6 @@ class CW_LIV():
         self.light_channel_impedance_dropdown.config(state=DISABLED)
         self.imp_label.config(state=DISABLED)
         self.osc_label.config(state=DISABLED)
-        self.start_button.config(command=self.start_liv_sweep_thermo)
 
     """
     Function referenced when: Oscilloscope radiobutton is selected
@@ -453,7 +299,6 @@ class CW_LIV():
         self.light_channel_impedance_dropdown.config(state=NORMAL)
         self.imp_label.config(state=NORMAL)
         self.osc_label.config(state=NORMAL)
-        self.start_button.config(command=self.start_liv_sweep_osc)
 
     """
     Function referenced when: Initializing the application window
@@ -556,11 +401,16 @@ class CW_LIV():
 
         # Start Button
         self.start_button = Button(
-            self.setFrame, text='Start', command=self.start_liv_sweep_osc)
+            self.setFrame, text='Start', command=self.start_liv_sweep)
         self.start_button.grid(column=3, row=8, rowspan=2, ipadx=10, pady=5)
 
-        # Live plot for real-time visualization (dual axis for voltage and light)
-        self.live_plot = LivePlotLIV(self.setFrame)
+        """ Live Plot frame """
+        self.plotFrame = LabelFrame(self.master)
+        self.plotFrame.grid(column=0, row=2, sticky='NSEW', padx=5, pady=5)
+         # Live plot for real-time visualization (dual axis for voltage and light)
+        self.plotFrame.columnconfigure(0, weight=1)
+        self.plotFrame.rowconfigure(0, weight=1)
+        self.live_plot = LivePlotLIV(self.plotFrame)
 
         """ Device settings frame """
         self.devFrame1 = LabelFrame(self.master, text='Device settings')
