@@ -316,6 +316,12 @@ class CW_LIV():
 
         # Assign window title and geometry
         self.master.title('CW Measurement: L-I-V')
+        
+        self.master.columnconfigure(0, weight=1)
+        self.master.columnconfigure(1, weight=1)
+        self.master.rowconfigure(0, weight=1)
+        self.master.rowconfigure(1, weight=1)
+        self.master.rowconfigure(2, weight=1)
 
         """ Sweep settings frame """
         self.setFrame = LabelFrame(self.master, text='Sweep settings')
