@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import Label, Entry, Button, LabelFrame, OptionMenu, Radiobutton, StringVar, IntVar, DISABLED, NORMAL, BooleanVar, Checkbutton
+from instruments import read_light, init_thermopile
 
 # Import Browse button functions
 from Browse_buttons import browse_plot_file, browse_txt_file
@@ -30,6 +31,7 @@ class VPulse_LIV():
 
     def start_liv_pulse(self):
 
+        thermo_id = None
         thermo_mode = (self.lightMode_var.get() == 'thermo')
 
         # Connect to oscilloscope
@@ -40,20 +42,11 @@ class VPulse_LIV():
         self.scope.write("*CLS")
         
         if thermo_mode:
-            self.thermopile = rm.open_resource(self.thermopile_address.get())
-            id = self.thermopile.query("*IDN?")
-            wavelength = int(self.wavelength_entry.get())
-            if "integra" in id.lower():
-                self.thermopile.write("*CSU")
-                self.thermopile.timeout = 5000
-                self.thermopile.write_termination = ''
-                self.thermopile.write(f"*PWC{wavelength:05d}")
-                print("Thermopile wavelength set to %d nm" % wavelength)
-            elif "coherent" in id.lower():
-                self.thermopile.write("*RST")
-                self.thermopile.write(f"CONFigure:WAVElength {wavelength:05d}")
-                print("Thermopile wavelength set to %d nm" % wavelength)
-                self.thermopile.write("CONFigure:ZERO")
+            self.thermopile, thermo_id = init_thermopile(
+            rm,
+            self.thermopile_address.get(),
+            self.wavelength_entry.get()
+            )
 
         # Set channel impedance to 50 ohms
         self.scope.write(":CHANnel%d:IMPedance %s" %(self.light_channel.get(), channelImpedance(self.light_channel_impedance.get())))
@@ -156,8 +149,14 @@ class VPulse_LIV():
                 self.pulser.write("VOLT %.3f" % (V_s))
                 self.pulser.write("OUTPut ON")
 
-                # Read light amplitude from oscilloscope
-                light_ampl_osc = self._read_light(id)
+                # Read light amplitude
+                light_ampl_osc = read_light(
+                    self.scope,
+                    getattr(self, 'thermopile', None),
+                    thermo_id,
+                    self.lightMode_var.get(),
+                    self.light_channel.get()
+                )
                 # Update trigger cursor if it being applied to the current waveform
                 if (self.trigger_channel.get() == self.light_channel.get()):
                     updateTriggerCursor(light_ampl_osc, self.scope, totalDisplayLight)
@@ -183,7 +182,13 @@ class VPulse_LIV():
                     voltage_ampl_osc, totalDisplayVoltage, vertScaleVoltage)
 
                 # Get updated readings
-                light_ampl_osc = self._read_light(id)
+                light_ampl_osc = read_light(
+                    self.scope,
+                    getattr(self, 'thermopile', None),
+                    thermo_id,
+                    self.lightMode_var.get(),
+                    self.light_channel.get()
+                )
                 current_ampl_osc = self.scope.query_ascii_values("SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.current_channel.get())[0]
                 voltage_ampl_osc = self.scope.query_ascii_values("SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.voltage_channel.get())[0]
                 
@@ -325,30 +330,6 @@ class VPulse_LIV():
         self.light_channel_label.config(state=NORMAL)
         self.start_button.config(command=self.start_liv_pulse)
         self.compute_power_checkbox.config(state=NORMAL)
-
-    def _read_light(self, id):
-        if self.lightMode_var.get() == 'thermo':
-            if "integra" in id.lower():
-                try:
-                    raw = self.thermopile.query('*CVU')
-                    return float(raw)
-                except ValueError:
-                    print(f"Thermopile read error: {raw}")
-                    return 0.0
-            elif "coherent" in id.lower():
-                try:
-                    raw = self.thermopile.query('READ?')
-                    return float(raw.split(',')[0])
-                except ValueError:
-                    print(f"Thermopile read error: {raw}")
-                    return 0.0
-            else:
-                print(f"WARNING: Thermopile {id} is not compatible with this system.")
-                return 0.0
-        else:
-            return self.scope.query_ascii_values(
-                "SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.light_channel.get()
-            )[0]
 
     def precompute_constant(x, y, z, lam, Ad, R, Z):
         PI = np.pi
