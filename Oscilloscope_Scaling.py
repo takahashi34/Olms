@@ -10,9 +10,12 @@ def incrOscVertScale(currentScale):
     scaleValues = [0.001, 0.002, 0.005, 0.01,
                     0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]
     scaleIndex = scaleValues.index(currentScale)
-    scaleIndex = scaleIndex + 1
-    newScale = scaleValues[scaleIndex]
-    return newScale
+    
+    # If already at max, stay there
+    if scaleIndex >= len(scaleValues) - 1:
+        return scaleValues[-1]
+
+    return scaleValues[scaleIndex + 1]
 
 """
 Function referenced when: Setting the impedance an oscilloscope channel.

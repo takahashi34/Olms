@@ -222,6 +222,7 @@ class VPulse_LIV():
         # Stop acquisition on thermopile if in use.
         if thermo_mode:
             self.thermopile.write("*CSU")
+            self.thermopile.close()
 
         try:
             if not os.path.exists(self.txt_dir_entry.get()):

@@ -191,6 +191,7 @@ class CW_LIV():
         # Thermopile cleanup
         if mode == 'thermo':
             self.thermopile.write('*COU')
+            self.thermopile.close()
 
         # Save data to file
         txtDir = self.txt_dir_entry.get()
