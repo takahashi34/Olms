@@ -54,9 +54,11 @@ def init_thermopile(rm, address, wavelength):
     return thermopile, id
     
 def read_light(scope, thermopile, thermo_id, lightMode, light_channel):
+    if scope is None and thermopile is None:
+        return 0.0
     if lightMode == 'thermo':
         if thermo_id is None:
-            print("WARNING: Thermopile not initialized.")
+            print("WARN: Thermopile not initialized.")
             return 0.0
         if "integra" in thermo_id.lower():
             try:
@@ -73,7 +75,7 @@ def read_light(scope, thermopile, thermo_id, lightMode, light_channel):
                 print(f"Thermopile read error: {raw}")
                 return 0.0
         else:
-            print(f"WARNING: Thermopile {thermo_id} is not compatible with this system.")
+            print(f"WARN: Thermopile {thermo_id} is not compatible with this system.")
             return 0.0
     else:
         return scope.query_ascii_values(

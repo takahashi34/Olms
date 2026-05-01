@@ -33,7 +33,10 @@ class VPulse_LIV():
     def start_liv_pulse(self):
 
         thermo_id = None
-        thermo_mode = (self.lightMode_var.get() == 'thermo')
+        mode = self.lightMode_var.get()
+        if self.thermopile_address.get() == "None (IV)":
+            print('WARN: IV mode selected; no optical data will be measured.')
+            mode = None
 
         # Connect to oscilloscope
         self.scope = rm.open_resource(self.scope_address.get())
@@ -42,7 +45,7 @@ class VPulse_LIV():
         self.scope.write("*RST")
         self.scope.write("*CLS")
         
-        if thermo_mode:
+        if mode == 'thermo':
             self.thermopile, thermo_id = init_thermopile(
             rm,
             self.thermopile_address.get(),
@@ -217,7 +220,7 @@ class VPulse_LIV():
         # Stop acquisition on oscilloscope
         self.scope.write(":STOP")
         # Stop acquisition on thermopile if in use.
-        if thermo_mode:
+        if mode == 'thermo':
             self.thermopile.write("*CSU")
             self.thermopile.close()
 
@@ -703,8 +706,9 @@ class VPulse_LIV():
         self.light_channel_label.grid(column=0, row=4, sticky='W')
 
         # --- Thermopile address dropdown (shown in thermopile mode) ---
+        options = ["None (IV)"] + connected_addresses
         self.thermopile_addr = OptionMenu(
-            self.instrFrame, self.thermopile_address, *connected_addresses)
+            self.instrFrame, self.thermopile_address, *options)
         self.thermopile_addr.grid(column=0, columnspan=2, row=5, padx=5, pady=5, sticky='W')
 
         # --- Oscilloscope light channel dropdown (shown in oscilloscope mode) ---

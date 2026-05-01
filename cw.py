@@ -124,7 +124,10 @@ class CW_LIV():
 
         thermo_id = None
 
-        if mode == 'osc':
+        if self.osc_address.get() == "None (IV)":
+            print('WARN: IV mode selected; no optical data will be measured.')
+            mode = None
+        elif mode == 'osc':
             # Connect to and initialize oscilloscope
             self.scope = rm.open_resource(self.osc_address.get())
             self.scope.write("*RST")
@@ -497,9 +500,10 @@ class CW_LIV():
         self.osc_label = Label(self.instrFrame, text='Light channel')
         self.osc_label.grid(column=0, row=5, sticky='W')
 
-        self.osc_addr = OptionMenu(self.instrFrame, self.osc_address, *connected_addresses)
+
+        options = ["None (IV)"] + connected_addresses
+        self.osc_addr = OptionMenu(self.instrFrame, self.osc_address, *options)
         self.osc_addr.grid(column=0, row=4, padx=5, sticky='W', columnspan=2)
-        
         # Oscilloscope channel options
         channels = [1, 2, 3, 4]
 
