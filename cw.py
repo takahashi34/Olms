@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import Label, Entry, Button, LabelFrame, OptionMenu, Radiobutton, StringVar, IntVar, DISABLED, NORMAL, font
+from dataAnal import export_to_origin
 
 from instruments import init_keithley, init_thermopile, read_light
 import pyvisa
@@ -183,7 +184,7 @@ class CW_LIV():
                     )
 
             self.light[i] = light_ampl_osc
-            self.live_plot.add_point(self.current[i] * 1000, self.voltage_array[i] * 1000, self.light[i] * 1000)
+            self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage_array[i])
 
         # Turn off output
         self.keithley.write("outp off")
@@ -193,10 +194,12 @@ class CW_LIV():
             self.thermopile.write('*COU')
             self.thermopile.close()
 
+
         # Save data to file
         txtDir = self.txt_dir_entry.get()
-        filename = (self.device_name_entry.get() + '_CW-LIV_' + self.device_temp_entry.get() +
-                    'C_' + self.device_dim_entry.get() + '_' + self.test_laser_button_var.get())
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = 'cwLIV_' + self.device_name_entry.get() + '_' + timestamp
         filepath = os.path.join(txtDir + '/' + filename + '.txt')
         with open(filepath, 'w+') as fd:
             fd.writelines('Device voltage (V)\tDevice current (A)\tPhotodetector current (W)\n')
@@ -205,32 +208,12 @@ class CW_LIV():
                 fd.write(str(self.current[i]) + '\t')
                 fd.write(str(self.light[i]) + '\n')
 
-        # Plot
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('Measured device light output (W)', color='red')
-        ax1.set_xlabel('Measured device current (mA)')
-        ax1.set_ylabel('Measured device voltage (V)', color='blue')
-        ax1.plot(self.current * 1000, self.voltage_array, color='blue', label='I-V Characteristic')
-        ax2.plot(self.current * 1000, self.light, color='red', label='L-I Characteristic')
+        # Convert current and light readings to mA and mW
+        self.current[:] = [x*1000 for x in self.current]
+        self.light[:] = [x*1000 for x in self.light]
+        export_to_origin(self.current, self.voltage_array, self.light, timestamp)
 
-        plotString = ('Device Name: ' + self.device_name_entry.get() + '\nTest Type: CW\n' +
-                      'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() +
-                      '\n' + 'Device Dimensions: ' + self.device_dim_entry.get() +
-                      ' (' + u'\u03BC' + 'm x ' + u'\u03BC' + 'm)\n' +
-                      'Test Structure or Laser: ' + self.test_laser_button_var.get())
-
-        plt.figtext(0.02, 0.02, plotString, fontsize=12)
-        plt.subplots_adjust(bottom=0.3)
-
-        if not os.path.exists(self.plot_dir_entry.get()):
-            try:
-                os.makedirs(self.plot_dir_entry.get())
-            except Exception:
-                print('Error: Creating directory: ' + self.plot_dir_entry.get())
-
-        plt.savefig(self.plot_dir_entry.get() + '/' + filename + ".png")
-        plt.show()
+                
 
     """
     Function referenced when: setting voltage within the start_iv_sweep function

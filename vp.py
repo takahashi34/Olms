@@ -8,6 +8,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import Label, Entry, Button, LabelFrame, OptionMenu, Radiobutton, StringVar, IntVar, DISABLED, NORMAL, BooleanVar, Checkbutton
 from instruments import read_light, init_thermopile
+from dataAnal import export_to_origin
 
 # Import Browse button functions
 from Browse_buttons import browse_plot_file, browse_txt_file
@@ -204,15 +205,11 @@ class VPulse_LIV():
                 voltageData.append(voltage_ampl_device)
                 currentData.append(current_ampl_device)
 
-                # Update live plot (convert to mA and mV for display)
-                self.live_plot.add_point(current_ampl_device * 1000, voltage_ampl_device * 1000, light_ampl_osc * 1000)
+                # Update live plot (convert to mA and mW for display)
+                self.live_plot.add_point(current_ampl_device * 1000, light_ampl_osc * 1000, voltage_ampl_device)
 
                 # Handling glitch points
                 prevPulserVoltage = V_s
-
-        # Convert current and voltage readings to mA and mV values
-        currentData[:] = [x*1000 for x in currentData]
-        voltageData[:] = [x*1000 for x in voltageData]
 
         # Turn off the pulser, and clear event registers
         self.pulser.write("OUTPut OFF")
@@ -232,8 +229,9 @@ class VPulse_LIV():
 
         # open file and write in data
         txtDir = self.txt_dir_entry.get()
-        filename = self.device_name_entry.get() + '_VP-LIV_' + self.device_temp_entry.get() + \
-            'C_' + self.device_dim_entry.get() + '_' + self.test_laser_button_var.get()
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = 'vpLIV_' + self.device_name_entry.get() + '_' + timestamp
         filepath = os.path.join(txtDir + '/' + filename + '.txt')
         fd = open(filepath, 'w+')
         i = 1
@@ -249,28 +247,11 @@ class VPulse_LIV():
         fd.close()
 
 
-        # ------------------ Plot measured characteristic ----------------------------------
-
-        fig, ax1 = plt.subplots()
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('Measured device light output (W)', color='red')
-        ax1.set_xlabel('Measured device current (mA)')
-        ax1.set_ylabel('Measured device voltage (mV)', color='blue')
-        ax1.plot(currentData, voltageData, color='blue', label='I-V Characteristic')
-        ax2.plot(currentData, lightData, color='red', label='L-I Characteristic')
-        ax1.legend(loc='upper left')
-
-        plotString = 'Device Name: ' + self.device_name_entry.get() + '\nTest Type: Voltage Pulsed\n' + 'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() + \
-            '\n' + 'Device Dimensions: ' + self.device_dim_entry.get() + ' (' + u'\u03BC' + 'm x ' + u'\u03BC' + 'm)\n' + \
-            'Test Structure or Laser: ' + self.test_laser_button_var.get()
-
-        plt.figtext(0.02, 0.02, plotString, fontsize=12)
-
-        plt.subplots_adjust(bottom=0.3)
-
-        plt.savefig(self.plot_dir_entry.get() + '/' + filename + ".png")
-        plt.show()
-        #self.export_to_origin(currentData, voltageData, lightData, filename) -- Commented out for now...
+        # Convert current and light readings to mA and mW for Origin export
+        currentData_mA = [x*1000 for x in currentData]
+        lightData_mW = [x*1000 for x in lightData]
+        # Export to origin
+        export_to_origin(currentData_mA, voltageData, lightData_mW, timestamp)
 
         if self.computeAbsPower:
             x = float(self.medium_x_entry.get()) * 1e-6      # µm → m
@@ -384,83 +365,6 @@ class VPulse_LIV():
                 self.tec_status.config(text='TEC read error')
 
         self.master.after(1000, self.update_tec_readback)
-
-    def export_to_origin(self, currentData, voltageData, lightData, filename):
-        """
-        Automates data export and plotting in Origin 8.5 via COM.
-        currentData : list in mA
-        voltageData : list in mV
-        lightData   : list in W
-        """
-        import win32com.client
-
-        # Launch or connect to a running Origin instance
-        origin = win32com.client.Dispatch("Origin.Application")
-        origin.Visible = True  # Set to False to run silently
-
-        # ---- Create a new project / worksheet ----
-        origin.NewProject()
-        wb = origin.WorksheetPages.Add()
-        ws = wb.Layers(0)  # First sheet
-
-        # Set up 5 columns: I(mA), V(mV), V(V), I(A), L(mW)
-        ws.Cols = 5
-
-        col_names  = ['I_mA',  'V_mV',  'V_V',   'I_A',   'L_mW']
-        col_units  = ['mA',    'mV',    'V',      'A',     'mW']
-        col_comments = [
-            'Current',
-            'Voltage (raw)',
-            'Voltage (converted)',
-            'Current (converted)',
-            'Light output'
-        ]
-
-        for i, (name, unit, comment) in enumerate(zip(col_names, col_units, col_comments)):
-            col = ws.Columns(i)
-            col.LongName = name
-            col.Units    = unit
-            col.Comments = comment
-
-        # ---- Write data rows ----
-        n = len(currentData)
-        for row in range(n):
-            ws.SetData([[
-                currentData[row],           # mA
-                voltageData[row],           # mV
-                voltageData[row] / 1000,    # V
-                currentData[row] / 1000,    # A
-                lightData[row]  * 1000      # mW
-            ]], row, 0)
-
-        ws.Name = filename[:15]  # Origin sheet names are capped at 15 chars
-
-        # ---- Run LabTalk script to build the two plots ----
-        labtalk = f"""
-            // ---- L-I plot (mW vs mA) ----
-            range rI  = ["{wb.Name}"]"{ws.Name}"!col(1);   // I in mA  -> X
-            range rLI = ["{wb.Name}"]"{ws.Name}"!col(5);   // L in mW  -> Y
-            plotxy rI:rLI plot:=200;                        // 200 = line+symbol
-            legend;
-            layer.x.label$ = "Current (mA)";
-            layer.y.label$ = "Light Output (mW)";
-            page.title$ = "L-I Curve - {filename}";
-
-            // ---- I-V plot (I in A vs V in V) ----
-            range rV  = ["{wb.Name}"]"{ws.Name}"!col(3);   // V in V   -> X
-            range rIV = ["{wb.Name}"]"{ws.Name}"!col(4);   // I in A   -> Y
-            plotxy rV:rIV plot:=200;
-            legend;
-            layer.x.label$ = "Voltage (V)";
-            layer.y.label$ = "Current (A)";
-            page.title$ = "I-V Curve - {filename}";
-        """
-        origin.Execute(labtalk)
-
-        # ---- Save the Origin project alongside your other output files ----
-        opj_path = self.plot_dir_entry.get() + '/' + filename + '.opj'
-        origin.Save(opj_path)
-        print(f"Origin project saved: {opj_path}")
 
     def build_tec_frame(self):
         self.tecFrame = LabelFrame(self.devFrame, text='LDC-3724B TEC')

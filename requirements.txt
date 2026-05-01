@@ -11,3 +11,5 @@ numpy>=1.20.0
 # Plotting and visualization
 matplotlib>=3.3.0
 
+# Windows COM support
+pywin32
