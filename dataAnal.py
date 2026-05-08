@@ -8,8 +8,8 @@ def export_to_origin(currentData, voltageData, lightData, filename):
     time.sleep(1)
 
     # Correct template name
-    cleanFilename = filename.replace("_", "")
-    pageName = origin.CreatePage(2, cleanFilename[2:], "Origin")
+    cleanFilename = filename.replace("_", "_")
+    pageName = origin.CreatePage(2, cleanFilename, "Origin")
 
     # Make sure columns exist
     origin.Execute("wks.ncols = 3;")

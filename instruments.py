@@ -52,24 +52,39 @@ def init_thermopile(rm, address, wavelength):
         print(f"WARNING: Thermopile '{id}' is not compatible with this system.")
 
     return thermopile, id
-    
-def read_light(scope, thermopile, thermo_id, lightMode, light_channel):
-    if scope is None and thermopile is None:
+
+def init_detector(rm, address, detectorID):
+    if detectorID == 'SourceMeter':
+        k = rm.open_resource(address)
+        k.write("*rst; status:preset; *cls")                       # Reset GPIB defaults
+        k.write("sour:func:mode curr")                             # Select source function mode as current source
+        k.write("sour:curr 0")                                     # Set source level to 10V
+        k.write("sens:func 'volt'")
+        k.write("sens:volt:prot:lev " + str(21))                   # Set volt compliance
+        k.write("sens:volt:range 1")                               # Set volt measure range 100mA
+        k.write("outp on")
+    return k
+
+def read_light(detector, mode, detectorID, light_channel):
+    if detector is None:
         return 0.0
-    if lightMode == 'thermo':
-        if thermo_id is None:
+    if detectorID == 'SourceMeter':
+            raw = detector.query('READ?')
+            return float(raw.split(',')[0])
+    if mode == 'thermo':
+        if detectorID is None:
             print("WARN: Thermopile not initialized.")
             return 0.0
-        if "integra" in thermo_id.lower():
+        if "integra" in detector.lower():
             try:
-                raw = thermopile.query('*CVU')
+                raw = detector.query('*CVU')
                 return float(raw)
             except ValueError:
                 print(f"Thermopile read error: {raw}")
                 return 0.0
-        elif "coherent" in thermo_id.lower():
+        elif "coherent" in detectorID.lower():
             try:
-                raw = thermopile.query('READ?')
+                raw = detector.query('READ?')
                 return float(raw.split(',')[0])
             except ValueError:
                 print(f"Thermopile read error: {raw}")
@@ -78,6 +93,6 @@ def read_light(scope, thermopile, thermo_id, lightMode, light_channel):
             print(f"WARN: Thermopile {thermo_id} is not compatible with this system.")
             return 0.0
     else:
-        return scope.query_ascii_values(
+        return detector.query_ascii_values(
             "SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % light_channel
         )[0]

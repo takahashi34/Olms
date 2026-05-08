@@ -9,7 +9,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import Label, Entry, Button, LabelFrame, OptionMenu, Radiobutton, StringVar, IntVar, DISABLED, NORMAL, font
 from dataAnal import export_to_origin
 
-from instruments import init_keithley, init_thermopile, read_light
+from instruments import init_keithley, init_thermopile, read_light, init_detector
 import pyvisa
 
 # Import Browse button functions
@@ -148,6 +148,10 @@ class CW_LIV():
                 self.wavelength_entry.get()
             )
 
+        elif mode == 'SourceMeter':
+            self.detector = init_detector(rm, self.osc_address.get(), mode)
+            thermo_id = mode
+
         # Build voltage array
         if self.radiobutton_var.get() == 'Lin':
             stepSize = round(float(self.step_size_entry.get()) / 1000, 3)
@@ -170,10 +174,9 @@ class CW_LIV():
             self.current[i] = eval(self.keithley.query("read?"))
 
             light_ampl_osc = read_light(
-                getattr(self, 'scope', None),
-                getattr(self, 'thermopile', None),
+                self.detector,
+                self.lightMode_var.get(),
                 thermo_id,
-                mode,
                 self.light_channel.get()
             )
             # Auto-scale vertical if in oscilloscope mode and signal nears top of display
@@ -183,7 +186,7 @@ class CW_LIV():
                     totalDisplayCurrent = 6 * vertScaleLight
                     self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
                     light_ampl_osc = read_light(
-                        self.scope, None, None, mode, self.light_channel.get()
+                        self.scope, self.lightMode_var.get(), thermo_id, self.light_channel.get()
                     )
 
             self.light[i] = light_ampl_osc
@@ -196,7 +199,6 @@ class CW_LIV():
         if mode == 'thermo':
             self.thermopile.write('*COU')
             self.thermopile.close()
-
 
         # Save data to file
         txtDir = self.txt_dir_entry.get()
@@ -211,10 +213,36 @@ class CW_LIV():
                 fd.write(str(self.current[i]) + '\t')
                 fd.write(str(self.light[i]) + '\n')
 
+                # Plot
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        ax1.set_ylabel('Power per facet (mW)', color='black')
+        ax1.set_xlabel('Current (mA)')
+        ax2.set_ylabel('Voltage (V)', color='blue')
+        ax2.plot(self.current * 1000, self.voltage_array, color='blue', label='I-V Characteristic')
+        ax1.plot(self.current * 1000, 1000 * self.light, color='black', label='L-I Characteristic')
+
+        plotString = ('Device Name: ' + self.device_name_entry.get() + '\nTest Type: CW\n' +
+                      'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() +
+                      '\n' + 'Device Dimensions: ' + self.device_dim_entry.get() +
+                      ' (' + u'\u03BC' + 'm x ' + u'\u03BC' + 'm)\n' +
+                      'Test Structure or Laser: ' + self.test_laser_button_var.get())
+
+        plt.figtext(0.02, 0.02, plotString, fontsize=12)
+        plt.subplots_adjust(bottom=0.3)
+
+        if not os.path.exists(self.plot_dir_entry.get()):
+            try:
+                os.makedirs(self.plot_dir_entry.get())
+            except Exception:
+                print('Error: Creating directory: ' + self.plot_dir_entry.get())
+
+        plt.savefig(self.plot_dir_entry.get() + '/' + filename + ".png")
+
         # Convert current and light readings to mA and mW
         self.current[:] = [x*1000 for x in self.current]
         self.light[:] = [x*1000 for x in self.light]
-        export_to_origin(self.current, self.voltage_array, self.light, timestamp)
+        export_to_origin(self.current, self.voltage_array, self.light, self.device_name_entry.get())
 
                 
 
@@ -475,15 +503,19 @@ class CW_LIV():
             self.instrFrame, text='Oscilloscope', variable=self.lightMode_var, command=self.osc_selected, value='osc')
         self.osc_radiobutton.grid(column=1, row=0, sticky='W')
 
+        self.osc_radiobutton = Radiobutton(
+            self.instrFrame, text='SourceMeter', variable=self.lightMode_var, command=self.thermo_selected, value='SourceMeter')
+        self.osc_radiobutton.grid(column=2, row=0, sticky='W')
+
         # The default setting for radiobutton is set to linear sweep
         self.lightMode_var.set('osc')
 
         # Set thermopile wavelength
         self.wavelength_label = Label(self.instrFrame, text='Thermopile Wavelength (nm)')
-        self.wavelength_label.grid(column=3, row=0, sticky='W', padx=(10, 0))
+        self.wavelength_label.grid(column=3, row=1, sticky='W', padx=(10, 0))
 
         self.wavelength_entry = Entry(self.instrFrame, width=7)
-        self.wavelength_entry.grid(column=3, row=1, sticky='W', padx=(10, 0))
+        self.wavelength_entry.grid(column=3, row=2, sticky='W', padx=(10, 0))
 
         # Disable # of points entry because oscilloscope is selected
         # self.num_of_pts_entry.config(state=DISABLED)
