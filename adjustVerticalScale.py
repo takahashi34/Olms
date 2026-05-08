@@ -1,7 +1,7 @@
 """
 Function referenced when: Pulse waveform nears the top of the screen
 Description: Continue to zoom out vertically until the pulse waveform fits comfortably in the screen.
-QIbo LI
+Hello
 """
 
 from Oscilloscope_Scaling import incrOscVertScale
