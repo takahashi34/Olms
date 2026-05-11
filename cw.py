@@ -199,8 +199,6 @@ class CW_LIV():
 
                 self.light[i] = light_ampl_osc
                 self.live_plot.add_point(self.current[i] * 1000, self.voltage_array[i] * 1000, self.light[i] * 1000)
-            elif self.stop_measurement == True:
-                break
 
         # Turn off output
         self.keithley.write("outp off")
