@@ -107,7 +107,13 @@ class CW_LIV():
         self.tec_status.grid(row=2, column=0, columnspan=2)
 
         Button(self.tecFrame, text='Send Temp.', command=self.set_tec_temp).grid(row=3, column=0)
-        Button(self.tecFrame, text='Toggle Output', command=self.toggle_tec).grid(row=3, column=1)    
+        Button(self.tecFrame, text='Toggle Output', command=self.toggle_tec).grid(row=3, column=1)  
+
+    self.stop_measurement = False
+
+    def stop_sweep(self):
+        print("Stopped measurement")
+        self.stop_measurement = True        
 
     def start_liv_sweep(self):
         compliance = float(self.compliance_entry.get()) / 1000
@@ -168,29 +174,30 @@ class CW_LIV():
         self.light = zeros(len(self.voltage_array), float)
         self.live_plot.reset()
 
-        for i in range(len(self.voltage_array)):
-            self.set_voltage(round(self.voltage_array[i], 3))
-            sleep(0.1)
-            self.current[i] = eval(self.keithley.query("read?"))
+        if stop_measurement == False:
+            for i in range(len(self.voltage_array)):
+                self.set_voltage(round(self.voltage_array[i], 3))
+                sleep(0.1)
+                self.current[i] = eval(self.keithley.query("read?"))
 
-            light_ampl_osc = read_light(
-                self.detector,
-                self.lightMode_var.get(),
-                thermo_id,
-                self.light_channel.get()
-            )
-            # Auto-scale vertical if in oscilloscope mode and signal nears top of display
-            if mode == 'osc':
-                while light_ampl_osc > 0.9 * totalDisplayCurrent:
-                    vertScaleLight = incrOscVertScale(vertScaleLight)
-                    totalDisplayCurrent = 6 * vertScaleLight
-                    self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
-                    light_ampl_osc = read_light(
-                        self.scope, self.lightMode_var.get(), thermo_id, self.light_channel.get()
-                    )
+                light_ampl_osc = read_light(
+                    self.detector,
+                    self.lightMode_var.get(),
+                    thermo_id,
+                    self.light_channel.get()
+                )
+                # Auto-scale vertical if in oscilloscope mode and signal nears top of display
+                if mode == 'osc':
+                    while light_ampl_osc > 0.9 * totalDisplayCurrent:
+                        vertScaleLight = incrOscVertScale(vertScaleLight)
+                        totalDisplayCurrent = 6 * vertScaleLight
+                        self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
+                        light_ampl_osc = read_light(
+                            self.scope, self.lightMode_var.get(), thermo_id, self.light_channel.get()
+                        )
 
-            self.light[i] = light_ampl_osc
-            self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage_array[i])
+                self.light[i] = light_ampl_osc
+                self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage_array[i])
 
         # Turn off output
         self.keithley.write("outp off")
@@ -420,6 +427,11 @@ class CW_LIV():
 
         # Disable # of points entry because Lin is selected
         self.num_of_pts_entry.config(state=DISABLED)
+        
+        # Stop Button
+        self.stop_button = Button(
+        self.setFrame, text='Stop', command=self.stop_sweep)
+        self.stop_button.grid(column=3, row=9, rowspan=1, ipadx=10, pady=5)
 
         # Start Button
         self.start_button = Button(
