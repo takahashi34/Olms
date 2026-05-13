@@ -173,7 +173,7 @@ class CW_LIV():
         self.light = zeros(len(self.voltage_array), float)
         self.live_plot.reset()
 
-        
+
         for i in range(len(self.voltage_array)):
             if self.stop_measurement == False:
                 self.set_voltage(round(self.voltage_array[i], 3))
