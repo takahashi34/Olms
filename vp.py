@@ -10,6 +10,9 @@ from tkinter import Label, Entry, Button, LabelFrame, OptionMenu, Radiobutton, S
 from instruments import read_light, init_thermopile
 from dataAnal import export_to_origin
 
+from instruments import init_keithley, init_thermopile, read_light, init_detector
+import pyvisa
+
 # Import Browse button functions
 from Browse_buttons import browse_plot_file, browse_txt_file
 # Import Oscilloscope scaling
@@ -30,7 +33,17 @@ class VPulse_LIV():
     # Import vertical scaling
     from adjustVerticalScale import adjustVerticalScale
 
+    #Global variable of stop button
+    stop_measurement = False
+
+    #Set variable to True once clicked
+    def stop_pulse(self):
+        print("Stopped measurement")
+        self.stop_measurement = True
+
     def start_liv_pulse(self):
+
+        self.stop_measurement = False
 
         thermo_id = None
         mode = self.lightMode_var.get()
@@ -44,13 +57,16 @@ class VPulse_LIV():
         # Initialize oscilloscope
         self.scope.write("*RST")
         self.scope.write("*CLS")
-        
+
+        # Initialize detector
         if mode == 'thermo':
-            self.thermopile, thermo_id = init_thermopile(
+            self.detector, thermo_id = init_thermopile(
             rm,
             self.thermopile_address.get(),
             self.wavelength_entry.get()
             )
+        elif mode == 'osc':
+            self.detector = self.scope
 
         # Set channel impedance to 50 ohms
         self.scope.write(":CHANnel%d:IMPedance %s" %(self.light_channel.get(), channelImpedance(self.light_channel_impedance.get())))
@@ -144,6 +160,12 @@ class VPulse_LIV():
         V_glitch_3 = 68
 
         for V_s in voltageSourceValues:
+            
+            self.master.update()
+
+            if self.stop_measurement == True:
+                break  # Break Loop Once Button Pressed
+            
             if ((prevPulserVoltage <= V_glitch_1 < V_s) or (prevPulserVoltage <= V_glitch_2 < V_s) or (prevPulserVoltage <= V_glitch_3 < V_s)):
                 self.pulser.write("output off")
                 self.pulser.write("volt %.3f" %V_s)
@@ -155,10 +177,9 @@ class VPulse_LIV():
 
                 # Read light amplitude
                 light_ampl_osc = read_light(
-                    self.scope,
-                    getattr(self, 'thermopile', None),
-                    thermo_id,
+                    self.detector,
                     self.lightMode_var.get(),
+                    thermo_id,
                     self.light_channel.get()
                 )
                 # Update trigger cursor if it being applied to the current waveform
@@ -187,10 +208,9 @@ class VPulse_LIV():
 
                 # Get updated readings
                 light_ampl_osc = read_light(
-                    self.scope,
-                    getattr(self, 'thermopile', None),
-                    thermo_id,
+                    self.detector,
                     self.lightMode_var.get(),
+                    thermo_id,
                     self.light_channel.get()
                 )
                 current_ampl_osc = self.scope.query_ascii_values("SINGLE;*OPC;:MEASure:VAMPlitude? CHANNEL%d" % self.current_channel.get())[0]
@@ -487,6 +507,10 @@ class VPulse_LIV():
         # Series resistance entry box
         self.series_resistance_entry = Entry(self.pulseFrame, width=5)
         self.series_resistance_entry.grid(column=1, row=9, pady=(0,10))
+
+        #Stop Button
+        self.stop_button = Button(self.pulseFrame, text='Stop', command=self.stop_pulse)
+        self.stop_button.grid(column=2, row=8, rowspan=2, ipadx=10, pady=5)
 
         # Start Button
         self.start_button = Button(self.pulseFrame, text='Start', command=self.start_liv_pulse)

@@ -107,15 +107,14 @@ class CW_LIV():
         self.tec_status.grid(row=2, column=0, columnspan=2)
 
         Button(self.tecFrame, text='Send Temp.', command=self.set_tec_temp).grid(row=3, column=0)
-        Button(self.tecFrame, text='Toggle Output', command=self.toggle_tec).grid(row=3, column=1)    
-
-    stop_measurement = False
+        Button(self.tecFrame, text='Toggle Output', command=self.toggle_tec).grid(row=3, column=1)  
 
     def stop_sweep(self):
         print("Stopped measurement")
-        stop_measurement = True
+        self.stop_measurement = True        
 
     def start_liv_sweep(self):
+        self.stop_measurement = False
         compliance = float(self.compliance_entry.get()) / 1000
 
         # Initialize SMU
@@ -135,16 +134,16 @@ class CW_LIV():
             mode = None
         elif mode == 'osc':
             # Connect to and initialize oscilloscope
-            self.scope = rm.open_resource(self.osc_address.get())
-            self.scope.write("*RST")
-            self.scope.write("*CLS")
-            self.scope.write(":CHANnel%d:IMPedance %s" % (self.light_channel.get(), channelImpedance(self.light_channel_impedance.get())))
-            self.scope.write(":TIMebase:RANGe 2E-6")
+            self.detector = rm.open_resource(self.osc_address.get())
+            self.detector.write("*RST")
+            self.detector.write("*CLS")
+            self.detector.write(":CHANnel%d:IMPedance %s" % (self.light_channel.get(), channelImpedance(self.light_channel_impedance.get())))
+            self.detector.write(":TIMebase:RANGe 2E-6")
 
             vertScaleLight = 0.001
-            self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), vertScaleLight))
-            self.scope.write(":CHANnel%d:DISPlay ON" % self.light_channel.get())
-            self.scope.write(":CHANnel%d:OFFset %.3fV" % (self.light_channel.get(), 2 * vertScaleLight))
+            self.detector.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), vertScaleLight))
+            self.detector.write(":CHANnel%d:DISPlay ON" % self.light_channel.get())
+            self.detector.write(":CHANnel%d:OFFset %.3fV" % (self.light_channel.get(), 2 * vertScaleLight))
             totalDisplayCurrent = 6 * vertScaleLight
 
         elif mode == 'thermo':
@@ -174,17 +173,17 @@ class CW_LIV():
         self.light = zeros(len(self.voltage_array), float)
         self.live_plot.reset()
 
+        
         for i in range(len(self.voltage_array)):
-            if stop_measurement == True:
+            if self.stop_measurement == False:
                 self.set_voltage(round(self.voltage_array[i], 3))
                 sleep(0.1)
                 self.current[i] = eval(self.keithley.query("read?"))
 
                 light_ampl_osc = read_light(
-                    getattr(self, 'scope', None),
-                    getattr(self, 'thermopile', None),
+                    self.detector,
+                    self.lightMode_var.get(),
                     thermo_id,
-                    mode,
                     self.light_channel.get()
                 )
                 # Auto-scale vertical if in oscilloscope mode and signal nears top of display
@@ -192,13 +191,16 @@ class CW_LIV():
                     while light_ampl_osc > 0.9 * totalDisplayCurrent:
                         vertScaleLight = incrOscVertScale(vertScaleLight)
                         totalDisplayCurrent = 6 * vertScaleLight
-                        self.scope.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
+                        self.detector.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
                         light_ampl_osc = read_light(
-                            self.scope, None, None, mode, self.light_channel.get()
+                            self.detector,
+                            self.lightMode_var.get(),
+                            thermo_id,
+                            self.light_channel.get()
                         )
 
                 self.light[i] = light_ampl_osc
-                self.live_plot.add_point(self.current[i] * 1000, self.voltage_array[i] * 1000, self.light[i] * 1000)
+                self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage_array[i])
             elif self.stop_measurement == True:
                 break
 
@@ -430,16 +432,16 @@ class CW_LIV():
 
         # Disable # of points entry because Lin is selected
         self.num_of_pts_entry.config(state=DISABLED)
+        
+        # Stop Button
+        self.stop_button = Button(
+        self.setFrame, text='Stop', command=self.stop_sweep)
+        self.stop_button.grid(column=3, row=9, rowspan=1, ipadx=10, pady=5)
 
         # Start Button
         self.start_button = Button(
             self.setFrame, text='Start', command=self.start_liv_sweep)
         self.start_button.grid(column=3, row=8, rowspan=2, ipadx=10, pady=5)
-
-        # Stop Button
-        self.stop_button = Button(
-            self.setFrame, text='Stop', command=self.stop_sweep)
-        self.stop_button.grid(column=3, row=9, rowspan=1, ipadx=10, pady=5)
 
         """ Live Plot frame """
         self.plotFrame = LabelFrame(self.master)
