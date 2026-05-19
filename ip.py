@@ -298,7 +298,6 @@ class IPulse_LI():
         self.stop_current_entry = Entry(self.pulseFrame, width=5)
         self.stop_current_entry.grid(column=2, row=7, pady=(0,10))
 		
-
         # Series resistance label
         self.series_resistance_label = Label(self.pulseFrame, text='Series resistance (' + u'\u03A9' + ')')
         self.series_resistance_label.grid(column=3, row=6)
@@ -308,7 +307,7 @@ class IPulse_LI():
 
         # Start Button
         self.start_button = Button(self.pulseFrame, text='Start', command=self.start_li_pulse)
-        self.start_button.grid(column=0, row=8, columnspan=4, ipadx=10, pady=5)
+        self.start_button.grid(column=3, row=8,ipadx=10, pady=5)
 
         # Live plot for real-time visualization
         self.live_plot = LivePlotLI(self.pulseFrame)
@@ -879,6 +878,14 @@ class IPulse_LIV():
     # Import function for adjusting vertical scales in oscilloscope
     from adjustVerticalScale import adjustVerticalScale
 
+    #Global variable of stop button
+    stop_measurement = False
+
+    #Set variable to True once clicked
+    def stop_pulse(self):
+        print("Stopped measurement")
+        self.stop_measurement = True
+
     def start_liv_pulse_osc(self):
 
         # Connect to oscilloscope
@@ -1354,17 +1361,28 @@ class IPulse_LIV():
 
         # Assign window title and geometry
         self.master.title('Current Pulsed Measurement: L-I-V')
+        
+        # Allow master to distribute space across its 2 columns and 3 rows
+        self.master.columnconfigure(0, weight=1)
+        self.master.columnconfigure(1, weight=1)
+        self.master.rowconfigure(0, weight=1)
+        self.master.rowconfigure(1, weight=1)
+        self.master.rowconfigure(2, weight=1)
 
         """ Pulse settings frame """
         self.pulseFrame = LabelFrame(self.master, text='Pulse Settings')
         # Display pulse settings frame
-        self.pulseFrame.grid(column=0, row=0, rowspan=2, sticky='N', padx=(10, 5), pady=(0,10))
+        self.pulseFrame.grid(column=0, row=0, rowspan=2, sticky='NSEW', padx=5, pady=5)
+        for c in range(4):
+            self.pulseFrame.columnconfigure(c, weight=1)
+        for r in range(10):
+            self.pulseFrame.rowconfigure(r, weight=1)
 
         # Create plot directory label, button, and entry box
         # Plot File Label
         self.plot_dir_label = Label(
             self.pulseFrame, text='Plot file directory:')
-        self.plot_dir_label.grid(column=1, row=0, sticky='W', columnspan=2)
+        self.plot_dir_label.grid(column=1, row=0, columnspan=2)
         # Plot directory Entry Box
         self.plot_dir_entry = Entry(self.pulseFrame, width=30)
         self.plot_dir_entry.grid(column=1, row=1, padx=(3, 0), columnspan=2)
@@ -1377,7 +1395,7 @@ class IPulse_LIV():
         # Text file label
         self.txt_dir_label = Label(
             self.pulseFrame, text='Text file directory:')
-        self.txt_dir_label.grid(column=1, row=2, sticky='W', columnspan=2)
+        self.txt_dir_label.grid(column=1, row=2, columnspan=2)
         # Text directory entry box
         self.txt_dir_entry = Entry(self.pulseFrame, width=30)
         self.txt_dir_entry.grid(column=1, row=3, padx=(3, 0), columnspan=2)
@@ -1420,26 +1438,39 @@ class IPulse_LIV():
         self.stop_current_label.grid(column=2, row=6)
         # Stop current entry box
         self.stop_current_entry = Entry(self.pulseFrame, width=5)
-        self.stop_current_entry.grid(column=2, row=7, pady=(0,10))
+        self.stop_current_entry.grid(column=2, row=7)
 
         # Series resistance label
         self.series_resistance_label = Label(self.pulseFrame, text='Series resistance (' + u'\u03A9' + ')')
         self.series_resistance_label.grid(column=3, row=6)
         # Series resistance entry box
         self.series_resistance_entry = Entry(self.pulseFrame, width=5)
-        self.series_resistance_entry.grid(column=3, row=7, pady=(0,10))
+        self.series_resistance_entry.grid(column=3, row=7)
+
+        #Stop Button
+        self.stop_button = Button(self.pulseFrame, text='Stop', command=self.stop_pulse)
+        self.stop_button.grid(column=2, row=8, ipadx=10, pady=5)
 
         # Start Button
         self.start_button = Button(self.pulseFrame, text='Start', command=self.start_liv_pulse_osc)
-        self.start_button.grid(column=0, columnspan=4, row=8, rowspan=2, ipadx=10, pady=5)
+        self.start_button.grid(column=3, row=8, ipadx=10, pady=5)
 
-        # Live plot for real-time visualization (dual axis for voltage and light)
-        self.live_plot = LivePlotLIV(self.pulseFrame)
+        """ Live Plot frame """
+        self.plotFrame = LabelFrame(self.master)
+        self.plotFrame.grid(column=0, row=2, sticky='NSEW', padx=5, pady=5)
+         # Live plot for real-time visualization (dual axis for voltage and light)
+        self.plotFrame.columnconfigure(0, weight=1)
+        self.plotFrame.rowconfigure(0, weight=1)
+        self.live_plot = LivePlotLIV(self.plotFrame)
 
         """ Device settings frame """
         self.devFrame = LabelFrame(self.master, text='Device Settings')
         # Display device settings frame
-        self.devFrame.grid(column=1, row=0, sticky='W', padx=(10, 5), pady=(5,0))
+        self.devFrame.grid(column=1, row=0, sticky='NSEW', padx=5, pady=5)
+        for c in range(2):
+            self.devFrame.columnconfigure(c, weight=1)
+        for r in range(6):
+            self.devFrame.rowconfigure(r, weight=1)
         
         # Create label for device name entry box
         self.device_name_label = Label(self.devFrame, text='Device name:')
@@ -1475,7 +1506,11 @@ class IPulse_LIV():
         """ Instrument settings frame """
         self.instrFrame = LabelFrame(self.master, text='Instrument Settings')
         # Display device settings frame
-        self.instrFrame.grid(column=1, row=1, sticky='N', padx=(10, 5))
+        self.instrFrame.grid(column=1, row=2, sticky='NSEW', padx=5, pady=5)
+        for c in range(4):
+            self.instrFrame.columnconfigure(c, weight=1)
+        for r in range(8):
+            self.instrFrame.rowconfigure(r, weight=1)
 
         # Device addresses
         connected_addresses = list(rm.list_resources())
