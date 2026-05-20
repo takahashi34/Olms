@@ -111,18 +111,23 @@ class CW_LIV():
 
     def stop_sweep(self):
         print("Stopped measurement")
-        self.stop_measurement = True        
+        self.stop_measurement = True 
 
     def start_liv_sweep(self):
         self.stop_measurement = False
         compliance = float(self.compliance_entry.get()) / 1000
 
-        # Initialize SMU
+        # Initialize SMU Based On User Selection
+        if self.source_mode_var.get() == 'Current Source':
+            source_mode = 'curr'
+        else:
+            source_mode = 'volt'
+
         self.keithley = init_keithley(
             rm,
             self.keithley_address.get(),
-            source_mode='volt',
-            compliance=compliance
+            source_mode = source_mode,
+            compliance = compliance
         )
 
         mode = self.lightMode_var.get()
@@ -156,53 +161,104 @@ class CW_LIV():
         elif mode == 'SourceMeter':
             self.detector = init_detector(rm, self.osc_address.get(), mode)
             thermo_id = mode
+            
+        #Current Source Mode: Set current as source, read volatge from keithley 
+        if self.curr_selection == True and self.volt_selection == False:
+            # Build current array
+            if self.radiobutton_var.get() == 'Lin':
+                stepSize = round(float(self.step_size_entry.get()) / 1000, 3)
+                start_Cur = float(self.start_entry.get())
+                stop_Cur = float(self.stop_entry.get())
+                self.current_array = arange(start_Cur, stop_Cur, stepSize)
+                self.current_array = append(self.current_array, stop_Cur)
+            elif self.radiobutton_var.get() == 'Log':
+                current_source_pos = logspace(-4, log10(float(self.stop_entry.get())), int(self.num_of_pts_entry.get()) / 2)
+                current_source_neg = -logspace(log10(abs(float(self.start_entry.get()))), -4, int(self.num_of_pts_entry.get()) / 2)
+                self.current_array = append(current_source_neg, current_source_pos)
+            # Modify data arrays 
+            self.voltage = zeros(len(self.current_array), float)
+            self.light = zeros(len(self.current_array), float)
+            self.current = self.current_array
+            self.live_plot.reset()
+                
+            for i in range(len(self.current_array)):
+                if self.stop_measurement == False:
+                    self.set_current(round(self.current_array[i], 3))
+                    sleep(0.1)
+                    self.voltage[i] = eval(self.keithley.query("read?"))
 
-        # Build voltage array
-        if self.radiobutton_var.get() == 'Lin':
-            stepSize = round(float(self.step_size_entry.get()) / 1000, 3)
-            startV = float(self.start_voltage_entry.get())
-            stopV = float(self.stop_voltage_entry.get())
-            self.voltage_array = arange(startV, stopV, stepSize)
-            self.voltage_array = append(self.voltage_array, stopV)
-        elif self.radiobutton_var.get() == 'Log':
-            voltage_source_pos = logspace(-4, log10(float(self.stop_voltage_entry.get())), int(self.num_of_pts_entry.get()) / 2)
-            voltage_source_neg = -logspace(log10(abs(float(self.start_voltage_entry.get()))), -4, int(self.num_of_pts_entry.get()) / 2)
-            self.voltage_array = append(voltage_source_neg, voltage_source_pos)
+                    light_ampl_osc = read_light(
+                        self.detector,
+                        self.lightMode_var.get(),
+                        thermo_id,
+                        self.light_channel.get()
+                    )
+                    # Auto-scale vertical if in oscilloscope mode and signal nears top of display
+                    if mode == 'osc':
+                        while light_ampl_osc > 0.9 * totalDisplayCurrent:
+                            vertScaleLight = incrOscVertScale(vertScaleLight)
+                            totalDisplayCurrent = 6 * vertScaleLight
+                            self.detector.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
+                            light_ampl_osc = read_light(
+                                self.detector,
+                                self.lightMode_var.get(),
+                                thermo_id,
+                                self.light_channel.get()
+                            )
 
-        self.current = zeros(len(self.voltage_array), float)
-        self.light = zeros(len(self.voltage_array), float)
-        self.live_plot.reset()
+                    self.light[i] = light_ampl_osc
+                    self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage[i])
+                elif self.stop_measurement == True:
+                    break
 
+        #Voltage Source Mode: Set voltage as source, read current from keithley    
+        elif self.volt_selection == True and self.curr_selection == False:
+            # Build voltage array
+            if self.radiobutton_var.get() == 'Lin':
+                stepSize = round(float(self.step_size_entry.get()) / 1000, 3)
+                startV = float(self.start_entry.get())
+                stopV = float(self.stop_entry.get())
+                self.voltage_array = arange(startV, stopV, stepSize)
+                self.voltage_array = append(self.voltage_array, stopV)
+            elif self.radiobutton_var.get() == 'Log':
+                voltage_source_pos = logspace(-4, log10(float(self.stop_entry.get())), int(self.num_of_pts_entry.get()) / 2)
+                voltage_source_neg = -logspace(log10(abs(float(self.start_entry.get()))), -4, int(self.num_of_pts_entry.get()) / 2)
+                self.voltage_array = append(voltage_source_neg, voltage_source_pos)
+            # Modify data arrays
+            self.current = zeros(len(self.voltage_array), float)
+            self.light = zeros(len(self.voltage_array), float)
+            self.voltage = self.voltage_array
+            self.live_plot.reset()
+        
+            for i in range(len(self.voltage_array)):
+                if self.stop_measurement == False:
+                    self.set_voltage(round(self.voltage_array[i], 3))
+                    sleep(0.1)
+                    self.current[i] = eval(self.keithley.query("read?"))
 
-        for i in range(len(self.voltage_array)):
-            if self.stop_measurement == False:
-                self.set_voltage(round(self.voltage_array[i], 3))
-                sleep(0.1)
-                self.current[i] = eval(self.keithley.query("read?"))
+                    light_ampl_osc = read_light(
+                        self.detector,
+                        self.lightMode_var.get(),
+                        thermo_id,
+                        self.light_channel.get()
+                    )
+                    # Auto-scale vertical if in oscilloscope mode and signal nears top of display
+                    if mode == 'osc':
+                        while light_ampl_osc > 0.9 * totalDisplayCurrent:
+                            vertScaleLight = incrOscVertScale(vertScaleLight)
+                            totalDisplayCurrent = 6 * vertScaleLight
+                            self.detector.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
+                            light_ampl_osc = read_light(
+                                self.detector,
+                                self.lightMode_var.get(),
+                                thermo_id,
+                                self.light_channel.get()
+                            )
 
-                light_ampl_osc = read_light(
-                    self.detector,
-                    self.lightMode_var.get(),
-                    thermo_id,
-                    self.light_channel.get()
-                )
-                # Auto-scale vertical if in oscilloscope mode and signal nears top of display
-                if mode == 'osc':
-                    while light_ampl_osc > 0.9 * totalDisplayCurrent:
-                        vertScaleLight = incrOscVertScale(vertScaleLight)
-                        totalDisplayCurrent = 6 * vertScaleLight
-                        self.detector.write(":CHANNEL%d:SCALe %.3f" % (self.light_channel.get(), float(vertScaleLight)))
-                        light_ampl_osc = read_light(
-                            self.detector,
-                            self.lightMode_var.get(),
-                            thermo_id,
-                            self.light_channel.get()
-                        )
-
-                self.light[i] = light_ampl_osc
-                self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage_array[i])
-            elif self.stop_measurement == True:
-                break
+                    self.light[i] = light_ampl_osc
+                    self.live_plot.add_point(self.current[i] * 1000, self.light[i] * 1000, self.voltage[i])
+                elif self.stop_measurement == True:
+                    break
 
         # Turn off output
         self.keithley.write("outp off")
@@ -220,19 +276,19 @@ class CW_LIV():
         filepath = os.path.join(txtDir + '/' + filename + '.txt')
         with open(filepath, 'w+') as fd:
             fd.writelines('Device voltage (V)\tDevice current (A)\tPhotodetector current (W)\n')
-            for i in range(len(self.voltage_array)):
-                fd.write(str(round(self.voltage_array[i], 5)) + '\t')
+            for i in range(len(self.voltage)):
+                fd.write(str(round(self.voltage[i], 5)) + '\t')
                 fd.write(str(self.current[i]) + '\t')
                 fd.write(str(self.light[i]) + '\n')
 
-                # Plot
+        # Plot
         fig, ax1 = plt.subplots()
         ax2 = ax1.twinx()
         ax1.set_ylabel('Power per facet (mW)', color='black')
         ax1.set_xlabel('Current (mA)')
         ax2.set_ylabel('Voltage (V)', color='blue')
-        ax2.plot(self.current * 1000, self.voltage_array, color='blue', label='I-V Characteristic')
-        ax1.plot(self.current * 1000, 1000 * self.light, color='black', label='L-I Characteristic')
+        ax2.plot(self.current * 1000, self.voltage, color='blue', label='I-V Characteristic')
+        ax1.plot(self.current * 1000, self.light * 1000, color='black', label='L-I Characteristic')
 
         plotString = ('Device Name: ' + self.device_name_entry.get() + '\nTest Type: CW\n' +
                       'Temperature (' + u'\u00B0' + 'C): ' + self.device_temp_entry.get() +
@@ -254,12 +310,12 @@ class CW_LIV():
         # Convert current and light readings to mA and mW
         self.current[:] = [x*1000 for x in self.current]
         self.light[:] = [x*1000 for x in self.light]
-        export_to_origin(self.current, self.voltage_array, self.light, self.device_name_entry.get())
+        export_to_origin(self.current, self.voltage, self.light, self.device_name_entry.get())
 
                 
 
     """
-    Function referenced when: setting voltage within the start_iv_sweep function
+    Function referenced when: setting voltage within the start_liv_sweep function
     Description: Connect to the Keithley, provide what voltage should be set
     read the corresponding current
     """
@@ -276,6 +332,27 @@ class CW_LIV():
         curr = keithley.query('READ?')
 
         return curr
+        
+
+    """
+    Function referenced when: setting current within the start_liv_sweep function
+    Description: Connect to the Keithley, provide what current should be set
+    read the corresponding voltage
+    """
+
+    def set_current(self, current):
+        keithley = rm.open_resource(self.keithley_address.get())
+        keithley.delay = 0.1    # Necessary for GPIB connection?
+        keithley.write("sour:func curr")
+        keithley.write("sens:volt:rang:auto on")
+        keithley.write("sens:func 'volt'")
+        keithley.write("form:elem volt")
+        keithley.write("outp on")
+        keithley.write("sour:curr:lev " + str(current))
+        volt = keithley.query('READ?')
+
+        return volt
+        
 
     # Implement multi-threading to allow the use of the main window while running a sweep
     # def stop_pressed(self):
@@ -327,6 +404,36 @@ class CW_LIV():
         self.imp_label.config(state=NORMAL)
         self.osc_label.config(state=NORMAL)
 
+    """
+    Function referenced when: voltage source radiobutton is selected
+    Description: When in voltage source mode, we use voltage as source
+    and read current from Keithley.
+    """
+
+    def volt_selected(self):
+        self.volt_selection = True
+        self.curr_selection = False
+        # Update labels for voltage source mode
+        self.step_size_label.config(text='Step size (mV)')
+        self.start_label.config(text='Start (V)')
+        self.stop_voltage_label.config(text='Stop (V)')
+        self.compliance_label.config(text='Compliance (mA)')
+
+    """
+    Function referenced when: current source radiobutton is selected
+    Description: When in current source mode, we use current as source
+    and read voltage from Keithley.
+    """
+
+    def curr_selected(self):
+        self.curr_selection = True
+        self.volt_selection = False
+        # Update labels for current source mode
+        self.step_size_label.config(text='Step size (mA)')
+        self.start_label.config(text='Start (A)')
+        self.stop_voltage_label.config(text='Stop (A)')
+        self.compliance_label.config(text='Compliance (mV)')
+    
     """
     Function referenced when: Initializing the application window
     Description: Creates the base geometry and all widgets on the top level
@@ -397,25 +504,25 @@ class CW_LIV():
         self.num_of_pts_entry.grid(column=2, row=7)
 
         # Compliance label
-        self.compliance_label = Label(self.setFrame, text='Compliance (mA)')
+        self.compliance_label = Label(self.setFrame, text='Compliance (mA/mV)')
         self.compliance_label.grid(column=3, row=6, columnspan=2)
         # Compliance entry box
         self.compliance_entry = Entry(self.setFrame, width=5)
         self.compliance_entry.grid(column=3, row=7, columnspan=2)
 
-        # Start voltage label
-        self.start_voltage_label = Label(self.setFrame, text='Start (V)')
-        self.start_voltage_label.grid(column=1, row=8)
-        # Start voltage entry box
-        self.start_voltage_entry = Entry(self.setFrame, width=5)
-        self.start_voltage_entry.grid(column=1, row=9)
+        # Start label (V/A)
+        self.start_label = Label(self.setFrame, text='Start (V/A)')
+        self.start_label.grid(column=1, row=8)
+        # Start entry box (V/A)
+        self.start_entry = Entry(self.setFrame, width=5)
+        self.start_entry.grid(column=1, row=9)
 
-        # Stop voltage label
-        self.stop_voltage_label = Label(self.setFrame, text='Stop (V)')
+        # Stop label (V/A)
+        self.stop_voltage_label = Label(self.setFrame, text='Stop (V/A)')
         self.stop_voltage_label.grid(column=2, row=8)
-        # Stop voltage entry box
-        self.stop_voltage_entry = Entry(self.setFrame, width=5)
-        self.stop_voltage_entry.grid(column=2, row=9)
+        # Stop entry box (V/A)
+        self.stop_entry = Entry(self.setFrame, width=5)
+        self.stop_entry.grid(column=2, row=9)
 
         # Linear, Log, Lin-Log buttons
         self.radiobutton_var = StringVar()
@@ -426,9 +533,23 @@ class CW_LIV():
         self.log_radiobutton = Radiobutton(
             self.setFrame, text='Log', variable=self.radiobutton_var, command=self.log_selected, value='Log')
         self.log_radiobutton.grid(column=2, row=10, sticky='W')
-
-        # The default setting for radiobutton is set to linear sweep
+        
+        # The default setting for lin/log radiobutton is set to linear sweep
         self.radiobutton_var.set('Lin')
+        
+        # Voltage/Current Source: Curr sour, Volt sour buttons
+        self.source_mode_var = StringVar()
+        self.volt_radiobutton = Radiobutton(
+            self.setFrame, text='Voltage Source', variable=self.source_mode_var, command=self.volt_selected, value='Voltage Source')
+        self.volt_radiobutton.grid(column=3, row=10, padx=(10, 0), sticky='W')
+
+        self.curr_radiobutton = Radiobutton(
+            self.setFrame, text='Current Source', variable=self.source_mode_var, command=self.curr_selected, value='Current Source')
+        self.curr_radiobutton.grid(column=4, row=10, sticky='W')
+
+        # The default setting for volt/curr radiobutton is set to current source
+        self.source_mode_var.set('Current Source')
+        self.curr_selected()
 
         # Disable # of points entry because Lin is selected
         self.num_of_pts_entry.config(state=DISABLED)
@@ -441,8 +562,8 @@ class CW_LIV():
         # Start Button
         self.start_button = Button(
             self.setFrame, text='Start', command=self.start_liv_sweep)
-        self.start_button.grid(column=3, row=8, rowspan=2, ipadx=10, pady=5)
-
+        self.start_button.grid(column=3, row=8, rowspan=1, ipadx=10, pady=5)
+        
         """ Live Plot frame """
         self.plotFrame = LabelFrame(self.master)
         self.plotFrame.grid(column=0, row=2, sticky='NSEW', padx=5, pady=5)
